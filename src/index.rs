@@ -2,8 +2,7 @@ pub mod tantivy_backend;
 
 use crate::error::GuidebookError;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 
 pub trait WritableIndex {
     fn begin_add_documents(&mut self) -> Box<dyn IndexWriter>;
@@ -33,8 +32,4 @@ pub struct Document {
     pub title: String,
     pub preview_text: Option<String>, // a preview text to show for the document, recommended to be less than 200 chars.
     pub preview_img_path: Option<PathBuf>, // a preview image to show for the document.
-}
-
-impl Document {
-    get_title
 }

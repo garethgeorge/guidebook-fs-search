@@ -3,6 +3,9 @@ use crate::index::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/**
+ * Internal representation of the schema and fields that have been added to the index.
+ */
 struct TantivyIndexLayout {
     schema: tantivy::schema::Schema,
     field_title: tantivy::schema::Field,
@@ -10,6 +13,9 @@ struct TantivyIndexLayout {
     field_path: tantivy::schema::Field,
 }
 
+/**
+ * Tantivy based backend for search indexing of documents.
+ */
 pub struct TantivyIndex {
     path: PathBuf,
     path_index: PathBuf,
@@ -71,6 +77,9 @@ impl TantivyIndex {
     }
 }
 
+/**
+ * Write handle on the tantivy index, allows for adding batches of documments and atomically committing them.
+ */
 struct TantivyIndexWriter<'a> {
     writer: tantivy::IndexWriter,
     layout: &'a TantivyIndexLayout,
@@ -87,26 +96,26 @@ impl TantivyIndexWriter<'_> {
 }
 
 impl IndexWriter for TantivyIndexWriter<'_> {
-    fn should_add_document(&mut self, metadata: &DocumentMetadata) -> bool {
+    fn should_add_document(&mut self, _metadata: &DocumentMetadata) -> bool {
         return true; // TODO: add already indexed detection. For now: wipeout index between runs.
     }
 
-    fn add_document(&mut self, doc: &Document) -> () {
-        let mut tantivyDoc = tantivy::doc! {};
+    fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> () {
+        let mut tantivy_doc = tantivy::doc! {};
 
         if let Some(path) = doc.metadata.path.to_str() {
-            tantivyDoc.add_facet(self.layout.field_path, tantivy::schema::Facet::from(path));
+            tantivy_doc.add_facet(self.layout.field_path, tantivy::schema::Facet::from(path));
         }
-        for keyword in &doc.keywords {
-            tantivyDoc.add_text(self.layout.field_keyword, keyword);
+        for keyword in keywords {
+            tantivy_doc.add_text(self.layout.field_keyword, keyword);
         }
-        self.writer.add_document(tantivyDoc);
+        self.writer.add_document(tantivy_doc);
 
         return ();
     }
 
     fn commit(&mut self) -> Result<(), GuidebookError> {
-        self.writer.commit();
+        self.writer.commit()?;
         return Ok(());
     }
 }

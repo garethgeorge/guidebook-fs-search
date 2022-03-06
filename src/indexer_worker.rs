@@ -1,10 +1,23 @@
-pub struct IndexerWorker {
+use crate::index::{IndexWriter};
 
+
+pub struct IndexerWorker {
+    paths: Vec<PathBuf>,
+    metadata_providers: Vec<Box<dyn MetadataProvider>>,
 }
 
 impl IndexerWorker {
-    fn create(paths: Vec<PathBuf>, metadata_providers: Vec<Box<dyn MetadataProvider>>) {
-        
+    pub fn create(paths: &Vec<PathBuf>, metadata_providers: Vec<Box<dyn MetadataProvider>>) {
+        return IndexerWorker {
+            paths: paths.clone(),
+            metadata_providers: metadata_providers,
+        }
+    }
+
+    pub fn index(&mut self, to: IndexWriter) {
+        for path in paths {
+            self.
+        }
     }
 }
 

@@ -34,3 +34,7 @@ pub struct Document {
     pub preview_text: Option<String>, // a preview text to show for the document, recommended to be less than 200 chars.
     pub preview_img_path: Option<PathBuf>, // a preview image to show for the document.
 }
+
+impl Document {
+    get_title
+}

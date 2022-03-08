@@ -2,7 +2,10 @@ pub mod tantivy_backend;
 
 use crate::error::GuidebookError;
 use serde::{Deserialize, Serialize};
-use std::path::{PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 pub trait WritableIndex {
     fn begin_add_documents(&mut self) -> Box<dyn IndexWriter>;
@@ -17,16 +20,27 @@ pub trait IndexWriter {
 /**
  * Represents only the metadata for a given document.
  */
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct DocumentMetadata {
     pub path: PathBuf,
-    pub size: i64,
+    pub size: u64,
+}
+
+impl DocumentMetadata {
+    pub fn from_path(path: &Path) -> Result<DocumentMetadata, GuidebookError> {
+        let metadata = fs::metadata(path)?;
+
+        return Ok(DocumentMetadata {
+            path: PathBuf::from(path),
+            size: metadata.len(),
+        });
+    }
 }
 
 /**
  * Represents an entire document.
  */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Document {
     pub metadata: DocumentMetadata,
     pub title: String,

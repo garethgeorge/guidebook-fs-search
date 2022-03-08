@@ -3,10 +3,14 @@
 pub mod config;
 pub mod error;
 pub mod index;
+pub mod indexer_worker;
 
+use crate::config::Config;
 use crate::index::tantivy_backend::*;
 use crate::index::*;
-use crate::config::Config;
+use crate::indexer_worker::{
+    metadata_providers::DefaultMetadataProvider, IndexerWorker, MetadataProvider,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,22 +22,21 @@ fn main() {
     let mut index =
         TantivyIndex::create(Path::new("./test_index")).expect("failed to create the TantivyIndex");
 
-    
-
     let mut writer = index
         .get_document_writer()
         .expect("Failed to get a document writer");
-    let mut keywords: Vec<String> = Vec::new();
-    keywords.push("my key words".to_string());
-    writer.add_document(&Document {
-        metadata: DocumentMetadata {
-            path: PathBuf::from("/test/hello/world"),
-            size: 100,
-        },
-        title: "world".to_string(),
-        preview_text: None,
-        preview_img_path: None,
-    }, &keywords);
+
+    let mut paths: Vec<PathBuf> = Vec::new();
+    paths.push(PathBuf::from(
+        "/Users/garethgeorge/Documents/workspace/projects/guidebook-fs-search",
+    ));
+
+    let mut providers: Vec<Box<dyn MetadataProvider>> = Vec::new();
+    providers.push(Box::new(DefaultMetadataProvider::create()));
+
+    let mut worker = IndexerWorker::create(&paths, providers);
+    worker.index(writer.as_mut());
+
     writer
         .commit()
         .expect("Failed to commit newly indexed documents. Uh oh.");

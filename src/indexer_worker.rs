@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{error::GuidebookError, index::Document, index::IndexWriter};
+use crate::{
+    error::GuidebookError,
+    index::{Document, DocumentMetadata, IndexWriter},
+};
 
 pub struct IndexerWorker {
     paths: Vec<PathBuf>,
@@ -39,8 +42,13 @@ impl IndexerWorker {
     ) -> Result<(), GuidebookError> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
-
-            self.index_file(entry.path().as_path(), to)?;
+            if let Ok(filetype) = entry.file_type() {
+                if filetype.is_dir() {
+                    self.index_directory(&entry.path(), to);
+                } else if filetype.is_file() {
+                    self.index_file(entry.path().as_path(), to)?;
+                }
+            }
         }
 
         return Ok(());
@@ -52,23 +60,25 @@ impl IndexerWorker {
         to: &mut dyn IndexWriter,
     ) -> Result<Option<Document>, GuidebookError> {
         // TODO: test that this only invokes up to the first metadata provider that actually returns a thing.
-        let document = self
-            .metadata_providers
-            .iter()
-            .map(|provider| {
-                return provider.provide_metadata(file);
-            })
-            .filter(|item| item.is_some())
-            .next();
+        let mut document: Option<DocumentAndKeywords> = None;
 
-        if let Some(Some(document)) = document {
-            to.add_document(&document.clone(), &Vec::new());
+        println!("file {}", file.to_string_lossy());
+
+        for provider in &self.metadata_providers {
+            if let Some(metadata) = provider.provide_metadata(file) {
+                document = Some(provider.document_for_metadata(&metadata)?);
+                break;
+            }
+        }
+
+        if let Some(document) = document {
+            to.add_document(&document.document.clone(), &Vec::new());
             println!(
                 "indexed metadata for {} is {:?}",
                 file.to_string_lossy(),
-                &document
+                &document.document
             );
-            return Ok(Some(document));
+            return Ok(Some(document.document));
         } else {
             println!("no metadata provided for {}", file.to_string_lossy());
         }
@@ -79,18 +89,28 @@ impl IndexerWorker {
 /**
  * Provides metadata for a given path
  */
-struct IndexableDocument {}
+pub struct DocumentAndKeywords {
+    document: Document,
+    keywords: Vec<String>,
+}
 
+// TODO(garethgeorge): replace &Path with a file trait that abstracts away the storage.
 pub trait MetadataProvider {
-    fn provide_metadata(&self, path: &Path) -> Option<Document>;
+    fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata>;
+    fn document_for_metadata(
+        &self,
+        metadata: &DocumentMetadata,
+    ) -> Result<DocumentAndKeywords, GuidebookError>;
 }
 
 pub mod metadata_providers {
     use crate::{
+        error::GuidebookError,
         index::{Document, DocumentMetadata},
-        indexer_worker::MetadataProvider,
     };
-    use std::path::Path;
+    use std::{fs, path::Path};
+
+    use super::{DocumentAndKeywords, MetadataProvider};
 
     pub struct DefaultMetadataProvider {}
 
@@ -101,12 +121,33 @@ pub mod metadata_providers {
     }
 
     impl MetadataProvider for DefaultMetadataProvider {
-        fn provide_metadata(&self, path: &Path) -> Option<Document> {
-            return Some(Document {
-                metadata: DocumentMetadata::from_path(path).ok()?,
-                title: String::from(path.to_str()?),
-                preview_text: None,
-                preview_img_path: None,
+        fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata> {
+            return DocumentMetadata::from_path(path).ok();
+        }
+
+        fn document_for_metadata(
+            &self,
+            metadata: &DocumentMetadata,
+        ) -> Result<DocumentAndKeywords, GuidebookError> {
+            let mut keywords: Vec<String> = Vec::new();
+
+            if metadata.size < 1_000_000 {
+                let contents = fs::read_to_string(&metadata.path).unwrap_or_default();
+
+                if contents.is_ascii() {
+                    keywords.push(contents);
+                    println!("added extra keywords!");
+                }
+            }
+
+            return Ok(DocumentAndKeywords {
+                document: Document {
+                    metadata: metadata.clone(),
+                    title: String::from(metadata.path.to_string_lossy()),
+                    preview_text: None,
+                    preview_img_path: None,
+                },
+                keywords: keywords,
             });
         }
     }

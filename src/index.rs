@@ -5,10 +5,18 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
+    vec,
 };
 
 pub trait WritableIndex {
-    fn begin_add_documents(&mut self) -> Box<dyn IndexWriter>;
+    fn begin_add_documents(&mut self) -> Result<Box<dyn IndexWriter + '_>, GuidebookError>;
+}
+
+pub trait SearchableIndex {
+    fn search<'a>(
+        &'a mut self,
+        query: &str,
+    ) -> Result<Box<dyn Iterator<Item = Document> + 'a>, GuidebookError>;
 }
 
 pub trait IndexWriter {

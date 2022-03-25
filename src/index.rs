@@ -16,12 +16,13 @@ pub trait SearchableIndex {
     fn search<'a>(
         &'a mut self,
         query: &str,
-    ) -> Result<Box<dyn Iterator<Item = Document> + 'a>, GuidebookError>;
+        result_limit: usize
+    ) -> Result<Vec<Document>, GuidebookError>;
 }
 
 pub trait IndexWriter {
     fn should_add_document(&mut self, metadata: &DocumentMetadata) -> bool;
-    fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> ();
+    fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> Result<(), GuidebookError>;
     fn commit(&mut self) -> Result<(), GuidebookError>;
 }
 

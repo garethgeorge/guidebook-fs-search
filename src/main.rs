@@ -11,9 +11,9 @@ use crate::index::*;
 use crate::indexer_worker::{
     metadata_providers::DefaultMetadataProvider, IndexerWorker, MetadataProvider,
 };
-use std::io::BufRead;
-use std::path::{Path, PathBuf};
 use std::{fs, io};
+use std::path::{Path, PathBuf};
+use std::io::BufRead;
 
 fn main() {
     let config = Config::from_file(&Path::new("./config.yml")).expect("failed to load config");
@@ -42,12 +42,11 @@ fn main() {
     //         .expect("Failed to commit newly indexed documents. Uh oh.");
     // }
 
-    loop {
-        let mut line = String::new();
-        let stdin = io::stdin();
-        stdin.lock().read_line(&mut line).unwrap();
-        &index.search(&line);
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line.unwrap();
     }
+    
 
     println!("Hello world.")
 }

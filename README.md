@@ -1,6 +1,10 @@
 # Guidebook
 TODO: possibly a better name :) 
 
+# Dependencies
+ - rust
+ - cargo
+
 # Roadmap
  - [ ] Document Indexing
     - [ ] Basic text indexing

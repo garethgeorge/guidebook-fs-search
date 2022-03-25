@@ -26,15 +26,23 @@ pub struct TantivyIndex {
 
     layout: TantivyIndexLayout,
     index: tantivy::Index,
+    kvstore: rocksdb::DB,
 }
 
 impl TantivyIndex {
-    pub fn create(dir: &Path) -> tantivy::Result<TantivyIndex> {
+    pub fn create(dir: &Path) -> Result<TantivyIndex, GuidebookError> {
+        // setup directory structure
         let path_index = dir.join("index");
         if !path_index.exists() {
             fs::create_dir(&path_index)?;
         }
 
+        let path_kvstore = dir.join("kvstore");
+        if !path_kvstore.exists() {
+            fs::create_dir(&path_kvstore)?;
+        }
+
+        // configure tantivy
         let mut schema_builder = tantivy::schema::Schema::builder();
         let field_title = schema_builder.add_text_field("title", tantivy::schema::TEXT);
         let field_keyword = schema_builder.add_text_field("keywords", tantivy::schema::TEXT);
@@ -53,6 +61,8 @@ impl TantivyIndex {
             },
         )?;
 
+        let db = rocksdb::DB::open_default(path_kvstore)?;
+
         return Ok(TantivyIndex {
             path: PathBuf::from(dir),
             path_index: PathBuf::from(&path_index),
@@ -65,6 +75,7 @@ impl TantivyIndex {
             },
 
             index: index,
+            kvstore: db,
         });
     }
 
@@ -80,9 +91,6 @@ impl TantivyIndex {
             &self.index,
             vec![self.layout.field_title, self.layout.field_keyword],
         );
-
-        println!("trying to search...");
-
         let query = query_parser.parse_query(query).unwrap();
         let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
 
@@ -103,18 +111,30 @@ impl SearchableIndex for TantivyIndex {
     fn search<'a>(
         &'a mut self,
         query: &str,
-    ) -> Result<Box<dyn Iterator<Item = Document> + 'a>, GuidebookError> {
-        return Ok(Box::new(SearchResultIterator {}));
-    }
-}
+        result_limit: usize,
+    ) -> Result<Vec<Document>, GuidebookError> {
+        let reader = self
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommit)
+            .try_into()
+            .unwrap();
+        let searcher = reader.searcher();
+        let query_parser = QueryParser::for_index(
+            &self.index,
+            vec![self.layout.field_title, self.layout.field_keyword],
+        );
+        let query = query_parser.parse_query(query).unwrap();
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
 
-struct SearchResultIterator {}
+        for (_score, doc_address) in top_docs {
+            let retrieved_doc = searcher.doc(doc_address).unwrap();
+            let path_field = retrieved_doc.get_first(self.layout.field_path);
 
-impl Iterator for SearchResultIterator {
-    type Item = Document;
+            println!("{}", self.layout.schema.to_json(&retrieved_doc));
+        }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        return None;
+        return Ok(Vec::new());
     }
 }
 
@@ -123,7 +143,7 @@ impl Iterator for SearchResultIterator {
  */
 struct TantivyIndexWriter<'a> {
     writer: tantivy::IndexWriter,
-    layout: &'a TantivyIndexLayout,
+    index: &'a TantivyIndex,
 }
 
 impl TantivyIndexWriter<'_> {
@@ -131,7 +151,7 @@ impl TantivyIndexWriter<'_> {
         let writer = index.index.writer(50_000_000 /* 50 MB heap size */)?;
         return Ok(TantivyIndexWriter {
             writer: writer,
-            layout: &index.layout,
+            index: index,
         });
     }
 }
@@ -141,20 +161,33 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         return true; // TODO: add already indexed detection. For now: wipeout index between runs.
     }
 
-    fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> () {
-        let mut tantivy_doc = tantivy::doc! {
-            self.layout.field_title => doc.title.clone()
-        };
+    fn add_document(
+        &mut self,
+        doc: &Document,
+        keywords: &Vec<String>,
+    ) -> Result<(), GuidebookError> {
+        // insert the full document in leveldb for later retrieval
+        self.index.kvstore.put(
+            doc.metadata.path.to_string_lossy().as_bytes(),
+            serde_json::to_string(&doc)?.as_bytes(),
+        )?;
 
+        // create the tantivy document to insert
+        let mut tantivy_doc = tantivy::doc! {
+            self.index.layout.field_title => doc.title.clone()
+        };
         if let Some(path) = doc.metadata.path.to_str() {
-            tantivy_doc.add_facet(self.layout.field_path, tantivy::schema::Facet::from(path));
+            tantivy_doc.add_facet(
+                self.index.layout.field_path,
+                tantivy::schema::Facet::from(path),
+            );
         }
         for keyword in keywords {
-            tantivy_doc.add_text(self.layout.field_keyword, keyword);
+            tantivy_doc.add_text(self.index.layout.field_keyword, keyword);
         }
         self.writer.add_document(tantivy_doc);
 
-        return ();
+        return Ok(());
     }
 
     fn commit(&mut self) -> Result<(), GuidebookError> {

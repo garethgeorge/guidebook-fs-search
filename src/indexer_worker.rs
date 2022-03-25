@@ -44,7 +44,7 @@ impl IndexerWorker {
             let entry = entry?;
             if let Ok(filetype) = entry.file_type() {
                 if filetype.is_dir() {
-                    self.index_directory(&entry.path(), to);
+                    self.index_directory(&entry.path(), to)?;
                 } else if filetype.is_file() {
                     self.index_file(entry.path().as_path(), to)?;
                 }
@@ -72,7 +72,7 @@ impl IndexerWorker {
         }
 
         if let Some(document) = document {
-            to.add_document(&document.document.clone(), &Vec::new());
+            to.add_document(&document.document.clone(), &Vec::new())?;
             println!(
                 "indexed metadata for {} is {:?}",
                 file.to_string_lossy(),
@@ -95,6 +95,7 @@ pub struct DocumentAndKeywords {
 }
 
 // TODO(garethgeorge): replace &Path with a file trait that abstracts away the storage.
+// TODO(garethgeorge): this interface is awkward, provider should not be tied into the implementation details of determining whether a file has been indexed.
 pub trait MetadataProvider {
     fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata>;
     fn document_for_metadata(

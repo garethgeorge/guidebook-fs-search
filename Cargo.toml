@@ -12,6 +12,7 @@ serde = "1.0.136"
 thiserror = "1.0.30"
 lmdb = "0.8.0"
 serde_yaml = "0.8.23"
+rocksdb = "0.18.0"
 
 [[bin]]
 name = "guidebook-fs-search"

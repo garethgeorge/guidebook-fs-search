@@ -33,6 +33,12 @@ pub enum GuidebookError {
     #[error("Serde YML parsing error: '{0}'")]
     SerdeYmlError(#[from] serde_yaml::Error),
 
+    #[error("Serde YML parsing error: '{0}'")]
+    SerdeJsonError(#[from] serde_json::Error),
+
+    #[error("Rocksdb error: '{0}'")]
+    RocksdbError(#[from] rocksdb::Error),
+
     #[error("Validation error: '{0}'")]
     ValidationError(#[from] ValidationError),
 }

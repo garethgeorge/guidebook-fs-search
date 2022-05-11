@@ -1,3 +1,3 @@
 database_location: ./test_index
 indexed_directories:
-  - path: /Users/garethgeorge/Documents/workspace/projects
+  - path: /home/beta/guidebook-fs-search/

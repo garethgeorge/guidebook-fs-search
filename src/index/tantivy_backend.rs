@@ -34,12 +34,12 @@ impl TantivyIndex {
         // setup directory structure
         let path_index = dir.join("index");
         if !path_index.exists() {
-            fs::create_dir(&path_index)?;
+            fs::create_dir(&path_index)?
         }
 
         let path_kvstore = dir.join("kvstore");
         if !path_kvstore.exists() {
-            fs::create_dir(&path_kvstore)?;
+            fs::create_dir(&path_kvstore)?
         }
 
         // configure tantivy
@@ -54,14 +54,14 @@ impl TantivyIndex {
         );
         let schema = schema_builder.build();
 
-        let index = tantivy::Index::create_in_dir(&path_index, schema.clone()).or_else(
-            |error| match error {
+        let index = tantivy::Index::create_in_dir(&path_index, schema.clone())
+            .or_else(|error| match error {
                 TantivyError::IndexAlreadyExists => Ok(tantivy::Index::open_in_dir(&path_index)?),
                 _ => Err(error),
-            },
-        )?;
+            })
+            .expect("failed to open the search index.");
 
-        let db = rocksdb::DB::open_default(path_kvstore)?;
+        let db = rocksdb::DB::open_default(path_kvstore).expect("failed to open keyvalue store.");
 
         return Ok(TantivyIndex {
             path: PathBuf::from(dir),
@@ -78,27 +78,6 @@ impl TantivyIndex {
             kvstore: db,
         });
     }
-
-    pub fn search(&mut self, query: &str) -> () {
-        let reader = self
-            .index
-            .reader_builder()
-            .reload_policy(ReloadPolicy::OnCommit)
-            .try_into()
-            .unwrap();
-        let searcher = reader.searcher();
-        let query_parser = QueryParser::for_index(
-            &self.index,
-            vec![self.layout.field_title, self.layout.field_keyword],
-        );
-        let query = query_parser.parse_query(query).unwrap();
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
-
-        for (_score, doc_address) in top_docs {
-            let retrieved_doc = searcher.doc(doc_address).unwrap();
-            println!("{}", self.layout.schema.to_json(&retrieved_doc));
-        }
-    }
 }
 
 impl WritableIndex for TantivyIndex {
@@ -108,8 +87,8 @@ impl WritableIndex for TantivyIndex {
 }
 
 impl SearchableIndex for TantivyIndex {
-    fn search<'a>(
-        &'a mut self,
+    fn search(
+        &mut self,
         query: &str,
         result_limit: usize,
     ) -> Result<Vec<Document>, GuidebookError> {
@@ -127,14 +106,28 @@ impl SearchableIndex for TantivyIndex {
         let query = query_parser.parse_query(query).unwrap();
         let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
 
+        let mut results: Vec<Document> = Vec::new();
+
         for (_score, doc_address) in top_docs {
             let retrieved_doc = searcher.doc(doc_address).unwrap();
-            let path_field = retrieved_doc.get_first(self.layout.field_path);
+            let path_field = retrieved_doc.get_first(self.layout.field_path).unwrap();
+            let path = path_field.path().unwrap();
 
-            println!("{}", self.layout.schema.to_json(&retrieved_doc));
+            // documents can not exist in tantivy without a matching instance in rocksdb
+            // TODO(garethgeorge): should we have error handling here?
+            if let Some(document_json_bytes) = self
+                .kvstore
+                .get(path.as_bytes())
+                .expect("failed to access kvstore")
+            {
+                let document: Document = serde_json::from_str(&String::from_utf8_lossy(&document_json_bytes)).expect("failed to parse document");
+                results.push(document);
+            } else {
+                println!("warning: no document in self.kvstore for {}", path);
+            }
         }
 
-        return Ok(Vec::new());
+        return Ok(results);
     }
 }
 

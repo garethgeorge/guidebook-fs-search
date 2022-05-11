@@ -40,7 +40,10 @@ impl IndexerWorker {
         dir: &Path,
         to: &mut dyn IndexWriter,
     ) -> Result<(), GuidebookError> {
-        for entry in fs::read_dir(dir)? {
+        println!("indexing directory {:?}", dir);
+        let dirIterator = fs::read_dir(dir).expect("failed to read directory");
+
+        for entry in dirIterator {
             let entry = entry?;
             if let Ok(filetype) = entry.file_type() {
                 if filetype.is_dir() {

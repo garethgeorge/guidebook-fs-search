@@ -13,8 +13,8 @@ pub trait WritableIndex {
 }
 
 pub trait SearchableIndex {
-    fn search<'a>(
-        &'a mut self,
+    fn search(
+        &mut self,
         query: &str,
         result_limit: usize
     ) -> Result<Vec<Document>, GuidebookError>;

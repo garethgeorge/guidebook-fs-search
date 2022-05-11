@@ -8,13 +8,13 @@ use crate::error::{GuidebookError, ValidationError};
  */
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    database_location: String,
-    indexed_directories: Vec<IndexedDirectory>,
+    pub database_location: String,
+    pub indexed_directories: Vec<IndexedDirectory>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct IndexedDirectory {
-    path: String,
+    pub path: String,
 }
 
 impl Config {

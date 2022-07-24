@@ -1,11 +1,14 @@
+use lmdb::LmdbResultExt;
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::{ReloadPolicy, TantivyError};
 
 use crate::error::GuidebookError;
 use crate::index::*;
+use lmdb_zero as lmdb;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /**
  * Internal representation of the schema and fields that have been added to the index.
@@ -26,7 +29,8 @@ pub struct TantivyIndex {
 
     layout: TantivyIndexLayout,
     index: tantivy::Index,
-    kvstore: rocksdb::DB,
+    lmdb_env: Arc<lmdb::Environment>,
+    db_indexed_files: lmdb::Database<'static>,
 }
 
 impl TantivyIndex {
@@ -61,7 +65,20 @@ impl TantivyIndex {
             })
             .expect("failed to open the search index.");
 
-        let db = rocksdb::DB::open_default(path_kvstore).expect("failed to open keyvalue store.");
+        // configure lmdb as a keyvalue store. We're joining the two databases here.
+        let lmdb_env = Arc::new(unsafe {
+            let GB = 1024 * 1024 * 1024;
+            let mut builder = lmdb::EnvBuilder::new().unwrap();
+            builder.set_maxdbs(2)?;
+            builder.set_mapsize(128 * GB);
+            builder
+                .open(
+                    &path_kvstore.to_string_lossy(),
+                    lmdb::open::Flags::empty(),
+                    0o600,
+                )
+                .expect("failed to create the keyvalue store environment.")
+        });
 
         return Ok(TantivyIndex {
             path: PathBuf::from(dir),
@@ -75,7 +92,13 @@ impl TantivyIndex {
             },
 
             index: index,
-            kvstore: db,
+            lmdb_env: lmdb_env.clone(),
+            db_indexed_files: lmdb::Database::open(
+                lmdb_env.clone(),
+                Some("indexed_files"),
+                &lmdb::DatabaseOptions::create_map::<str>(),
+            )
+            .expect("failed to create keyvalue store tracking indexed files"),
         });
     }
 }
@@ -91,6 +114,7 @@ impl SearchableIndex for TantivyIndex {
         &mut self,
         query: &str,
         result_limit: usize,
+        result_offset: usize,
     ) -> Result<Vec<Document>, GuidebookError> {
         let reader = self
             .index
@@ -104,27 +128,30 @@ impl SearchableIndex for TantivyIndex {
             vec![self.layout.field_title, self.layout.field_keyword],
         );
         let query = query_parser.parse_query(query).unwrap();
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
+        let top_docs = searcher
+            .search(
+                &query,
+                &TopDocs::with_limit(result_limit).and_offset(result_offset),
+            )
+            .unwrap();
 
         let mut results: Vec<Document> = Vec::new();
+
+        let indexed_files_read_txn = lmdb::ReadTransaction::new(self.lmdb_env.clone())?;
+        let indexed_files_reader = indexed_files_read_txn.access();
 
         for (_score, doc_address) in top_docs {
             let retrieved_doc = searcher.doc(doc_address).unwrap();
             let path_field = retrieved_doc.get_first(self.layout.field_path).unwrap();
             let path = path_field.path().unwrap();
 
-            // documents can not exist in tantivy without a matching instance in rocksdb
-            // TODO(garethgeorge): should we have error handling here?
-            if let Some(document_json_bytes) = self
-                .kvstore
-                .get(path.as_bytes())
-                .expect("failed to access kvstore")
-            {
-                let document: Document = serde_json::from_str(&String::from_utf8_lossy(&document_json_bytes)).expect("failed to parse document");
-                results.push(document);
-            } else {
-                println!("warning: no document in self.kvstore for {}", path);
-            }
+            let document_metadata_json: &str = indexed_files_reader
+                .get(&&self.db_indexed_files, path.as_bytes())
+                .expect("failed to find metadata for document. Index is in corrupt state.");
+
+            let document: Document =
+                serde_json::from_str(document_metadata_json).expect("failed to parse document");
+            results.push(document);
         }
 
         return Ok(results);
@@ -135,23 +162,39 @@ impl SearchableIndex for TantivyIndex {
  * Write handle on the tantivy index, allows for adding batches of documments and atomically committing them.
  */
 struct TantivyIndexWriter<'a> {
-    writer: tantivy::IndexWriter,
     index: &'a TantivyIndex,
+    tantivy_writer: tantivy::IndexWriter,
+    indexed_files_txn: Option<Arc<lmdb::WriteTransaction<'static>>>,
 }
 
 impl TantivyIndexWriter<'_> {
     fn create(index: &mut TantivyIndex) -> Result<TantivyIndexWriter, GuidebookError> {
-        let writer = index.index.writer(50_000_000 /* 50 MB heap size */)?;
         return Ok(TantivyIndexWriter {
-            writer: writer,
             index: index,
+            tantivy_writer: index.index.writer(50_000_000 /* 50 MB heap size */)?,
+            indexed_files_txn: Some(Arc::new(lmdb::WriteTransaction::new(
+                index.lmdb_env.clone(),
+            )?)),
         });
     }
 }
 
 impl IndexWriter for TantivyIndexWriter<'_> {
     fn should_add_document(&mut self, _metadata: &DocumentMetadata) -> bool {
-        return true; // TODO: add already indexed detection. For now: wipeout index between runs.
+        let reader = self
+            .indexed_files_txn
+            .as_ref()
+            .expect("IndexWriter used after commit")
+            .access();
+
+        let doc: Option<&str> = reader
+            .get(
+                &(&self.index.db_indexed_files),
+                _metadata.path.to_string_lossy().as_bytes(),
+            )
+            .to_opt()
+            .unwrap();
+        return !doc.is_some();
     }
 
     fn add_document(
@@ -160,10 +203,21 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         keywords: &Vec<String>,
     ) -> Result<(), GuidebookError> {
         // insert the full document in leveldb for later retrieval
-        self.index.kvstore.put(
-            doc.metadata.path.to_string_lossy().as_bytes(),
-            serde_json::to_string(&doc)?.as_bytes(),
-        )?;
+        {
+            let mut access = self
+                .indexed_files_txn
+                .as_ref()
+                .expect("IndexWriter used after commit")
+                .access();
+            access
+                .put(
+                    &(&self.index.db_indexed_files),
+                    doc.metadata.path.to_string_lossy().as_bytes(),
+                    serde_json::to_string(&doc)?.as_bytes(),
+                    lmdb::put::Flags::empty(),
+                )
+                .unwrap();
+        }
 
         // create the tantivy document to insert
         let mut tantivy_doc = tantivy::doc! {
@@ -178,13 +232,19 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         for keyword in keywords {
             tantivy_doc.add_text(self.index.layout.field_keyword, keyword);
         }
-        self.writer.add_document(tantivy_doc);
+        self.tantivy_writer.add_document(tantivy_doc);
 
         return Ok(());
     }
 
     fn commit(&mut self) -> Result<(), GuidebookError> {
-        self.writer.commit()?;
+        self.tantivy_writer.commit()?;
+
+        // we clear out the IndexWriter's handle on the WriteTransaction and then unwrap and commit the only remaining handle.
+        let indexed_files_txn = self.indexed_files_txn.as_ref().unwrap().clone();
+        self.indexed_files_txn = None;
+
+        Arc::try_unwrap(indexed_files_txn).unwrap().commit()?;
         return Ok(());
     }
 }

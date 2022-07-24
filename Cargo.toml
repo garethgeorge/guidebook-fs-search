@@ -10,9 +10,8 @@ tantivy = "0.16.1"
 serde_json = "1.0.79"
 serde = "1.0.136"
 thiserror = "1.0.30"
-lmdb = "0.8.0"
+lmdb-zero = "0.4.4"
 serde_yaml = "0.8.23"
-rocksdb = "0.18.0"
 
 [[bin]]
 name = "guidebook-fs-search"

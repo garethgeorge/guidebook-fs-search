@@ -36,8 +36,8 @@ pub enum GuidebookError {
     #[error("Serde YML parsing error: '{0}'")]
     SerdeJsonError(#[from] serde_json::Error),
 
-    #[error("Rocksdb error: '{0}'")]
-    RocksdbError(#[from] rocksdb::Error),
+    #[error("Lmdb error: '{0}'")]
+    RocksdbError(#[from] lmdb_zero::Error),
 
     #[error("Validation error: '{0}'")]
     ValidationError(#[from] ValidationError),

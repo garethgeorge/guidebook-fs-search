@@ -13,6 +13,7 @@ pub struct IndexerWorker {
     metadata_providers: Vec<Box<dyn MetadataProvider>>,
 }
 
+// TODO: this does not need to be a class... this can be functional. Metadata providers do need to be generic however.
 impl IndexerWorker {
     pub fn create(
         paths: &Vec<PathBuf>,
@@ -41,9 +42,9 @@ impl IndexerWorker {
         to: &mut dyn IndexWriter,
     ) -> Result<(), GuidebookError> {
         println!("indexing directory {:?}", dir);
-        let dirIterator = fs::read_dir(dir).expect("failed to read directory");
+        let dir_iterator = fs::read_dir(dir).expect("failed to read directory");
 
-        for entry in dirIterator {
+        for entry in dir_iterator {
             let entry = entry?;
             if let Ok(filetype) = entry.file_type() {
                 if filetype.is_dir() {
@@ -69,7 +70,11 @@ impl IndexerWorker {
 
         for provider in &self.metadata_providers {
             if let Some(metadata) = provider.provide_metadata(file) {
-                document = Some(provider.document_for_metadata(&metadata)?);
+                if to.should_add_document(&metadata) {
+                    document = Some(provider.document_for_metadata(&metadata)?);
+                } else {
+                    println!("skipped adding document, already indexed.");
+                }
                 break;
             }
         }

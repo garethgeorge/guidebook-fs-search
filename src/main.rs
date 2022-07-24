@@ -11,8 +11,9 @@ use crate::index::*;
 use crate::indexer_worker::{
     metadata_providers::DefaultMetadataProvider, IndexerWorker, MetadataProvider,
 };
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use std::{fs, io};
 
 fn main() {
@@ -24,7 +25,7 @@ fn main() {
         TantivyIndex::create(Path::new("./test_index")).expect("failed to create the index");
 
     {
-        let mut writer = &mut index
+        let writer = &mut index
             .begin_add_documents()
             .expect("Failed to get a document writer");
 
@@ -45,17 +46,26 @@ fn main() {
     }
 
     let stdin = io::stdin();
+    print!("query: ");
+    let _ = std::io::stdout().flush();
+
     for line in stdin.lock().lines() {
         let line = line.unwrap();
 
+        let now = SystemTime::now();
+
         println!("searching...");
         let documents = index
-            .search(&line, 10)
+            .search(&line, 10, 0)
             .expect("failed to execute the query.");
 
         for document in documents {
             println!("{:?}", document);
         }
+
+        print!("took: {} millis", now.elapsed().unwrap().as_millis());
+        print!("query: ");
+        let _ = std::io::stdout().flush();
     }
 
     println!("Hello world.")

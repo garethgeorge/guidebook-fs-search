@@ -16,7 +16,8 @@ pub trait SearchableIndex {
     fn search(
         &mut self,
         query: &str,
-        result_limit: usize
+        result_limit: usize,
+        result_offset: usize
     ) -> Result<Vec<Document>, GuidebookError>;
 }
 

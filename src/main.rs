@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::index::tantivy_backend::*;
 use crate::index::*;
 use crate::indexer_worker::{
-    metadata_providers::DefaultMetadataProvider, IndexerWorker, MetadataProvider,
+    metadata_providers::BasicAttributesMetadataProvider, IndexerWorker, MetadataProvider,
 };
 use anyhow::{Context, Error, Result};
 use clap::{App, Arg, SubCommand};
@@ -73,7 +73,7 @@ fn main() {
         }
 
         let mut providers: Vec<Box<dyn MetadataProvider>> = Vec::new();
-        providers.push(Box::new(DefaultMetadataProvider::create()));
+        providers.push(Box::new(BasicAttributesMetadataProvider::new()));
 
         let mut worker = IndexerWorker::create(&paths, providers);
         worker.index(writer.as_mut()).expect("failed to index");

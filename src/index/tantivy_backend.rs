@@ -6,9 +6,9 @@ use tantivy::{ReloadPolicy, TantivyError};
 use crate::index::*;
 use anyhow::{Context, Error, Result};
 use lmdb_zero as lmdb;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fs, path};
 
 /**
  * Internal representation of the schema and fields that have been added to the index.
@@ -180,7 +180,7 @@ impl TantivyIndexWriter<'_> {
 }
 
 impl IndexWriter for TantivyIndexWriter<'_> {
-    fn should_add_document(&mut self, _metadata: &DocumentMetadata) -> bool {
+    fn should_add_document(&mut self, path: &Path) -> bool {
         let reader = self
             .indexed_files_txn
             .as_ref()
@@ -190,7 +190,7 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         let doc: Option<&str> = reader
             .get(
                 &(&self.index.db_indexed_files),
-                _metadata.path.to_string_lossy().as_bytes(),
+                path.to_string_lossy().as_bytes(),
             )
             .to_opt()
             .unwrap();

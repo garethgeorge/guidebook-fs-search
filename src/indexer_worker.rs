@@ -81,13 +81,15 @@ impl IndexerWorker {
 
         println!("file {}", file.to_string_lossy());
 
-        for provider in &self.metadata_providers {
-            if let Some(metadata) = provider.provide_metadata(file) {
-                if to.should_add_document(&metadata) {
-                    document = Some(provider.document_for_metadata(&metadata)?);
-                } else {
-                    println!("skipped adding document, already indexed.");
-                }
+        if !to.should_add_document(file) {
+            println!("skipping indexing file, already indexed.");
+            return Ok(None);
+        }
+
+        for provider in self.metadata_providers.iter_mut() {
+            let result = provider.index_document(file)?;
+            if result.is_some() {
+                document = result;
                 break;
             }
         }
@@ -96,13 +98,12 @@ impl IndexerWorker {
             to.add_document(&document.document.clone(), &Vec::new())
                 .context("failed to add document to index writer transaction")?;
             println!(
-                "indexed metadata for {} is {:?}",
-                file.to_string_lossy(),
-                &document.document
+                "indexed metadata for {:?} is {:?}",
+                file, &document.document
             );
             return Ok(Some(document.document));
         } else {
-            println!("no metadata provided for {}", file.to_string_lossy());
+            println!("no indexer provided metadata for {:?}", file);
         }
         return Ok(None);
     }
@@ -116,37 +117,34 @@ pub struct DocumentAndKeywords {
     keywords: Vec<String>,
 }
 
-// TODO(garethgeorge): replace &Path with a file trait that abstracts away the storage.
-// TODO(garethgeorge): this interface is awkward, provider should not be tied into the implementation details of determining whether a file has been indexed.
 pub trait MetadataProvider {
-    fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata>;
-    fn document_for_metadata(&self, metadata: &DocumentMetadata) -> Result<DocumentAndKeywords>;
+    // TODO(garethgeorge): provide a caching layer that provides basic file information to avoid each indexer querying the filesystem.
+    // TODO(garethgeorge): replace &Path with a file trait that abstracts away the storage.
+    fn index_document(&self, path: &Path) -> Result<Option<DocumentAndKeywords>>;
 }
 
 pub mod metadata_providers {
     use crate::index::{Document, DocumentMetadata};
     use anyhow::Result;
-    use std::{fs, path::Path};
+    use std::{
+        fs::{self, Metadata},
+        path::Path,
+    };
 
     use super::{DocumentAndKeywords, MetadataProvider};
 
-    pub struct DefaultMetadataProvider {}
+    pub struct BasicAttributesMetadataProvider {}
 
-    impl DefaultMetadataProvider {
-        pub fn create() -> DefaultMetadataProvider {
-            return DefaultMetadataProvider {};
+    impl BasicAttributesMetadataProvider {
+        pub fn new() -> BasicAttributesMetadataProvider {
+            return BasicAttributesMetadataProvider {};
         }
     }
 
-    impl MetadataProvider for DefaultMetadataProvider {
-        fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata> {
-            return DocumentMetadata::from_path(path).ok();
-        }
+    impl MetadataProvider for BasicAttributesMetadataProvider {
+        fn index_document(&self, path: &Path) -> Result<Option<DocumentAndKeywords>> {
+            let metadata = DocumentMetadata::from_path(path)?;
 
-        fn document_for_metadata(
-            &self,
-            metadata: &DocumentMetadata,
-        ) -> Result<DocumentAndKeywords> {
             let mut keywords: Vec<String> = Vec::new();
 
             if metadata.size < 1_000_000 {
@@ -158,7 +156,7 @@ pub mod metadata_providers {
                 }
             }
 
-            return Ok(DocumentAndKeywords {
+            return Ok(Some(DocumentAndKeywords {
                 document: Document {
                     metadata: metadata.clone(),
                     title: String::from(metadata.path.to_string_lossy()),
@@ -166,7 +164,7 @@ pub mod metadata_providers {
                     preview_img_path: None,
                 },
                 keywords: keywords,
-            });
+            }));
         }
     }
 }

@@ -22,7 +22,7 @@ pub trait SearchableIndex {
 }
 
 pub trait IndexWriter {
-    fn should_add_document(&mut self, metadata: &DocumentMetadata) -> bool;
+    fn should_add_document(&mut self, path: &Path) -> bool;
     fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> Result<()>;
     fn commit(&mut self) -> Result<()>;
 }

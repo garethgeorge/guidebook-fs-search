@@ -10,6 +10,7 @@ TODO: possibly a better name :)
     - [ ] Basic text indexing
     - [ ] PDF Support
     - [ ] Tesseract support for OCR
+ - [ ] Incremental Indexing - add files to transactions in batches
  - [ ] Search
    - [ ] Basic queries via CLI
    - [ ] Web frontend

@@ -1,7 +1,7 @@
+use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path};
-use crate::error::{GuidebookError, ValidationError};
+use std::path::Path;
 
 /**
  * Guidebook's configuration
@@ -18,11 +18,14 @@ pub struct IndexedDirectory {
 }
 
 impl Config {
-    pub fn from_file(path: &Path) -> Result<Config, GuidebookError> {
+    pub fn from_file(path: &Path) -> Result<Config> {
         println!("config path: {:?}", path);
         let extension = path.extension();
         if extension.is_none() || extension.unwrap_or_default() != "yml" {
-            return Err(GuidebookError::from(ValidationError("config filepath must end with .yml".to_string())));
+            return Err(Error::msg(format!(
+                "Config file must be a .yml file, found: {:?}",
+                extension
+            )));
         }
 
         let config: Config = serde_yaml::from_str(&fs::read_to_string(&path)?)?;

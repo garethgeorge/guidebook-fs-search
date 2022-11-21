@@ -3,8 +3,8 @@ use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::{ReloadPolicy, TantivyError};
 
-use crate::error::GuidebookError;
 use crate::index::*;
+use anyhow::{Context, Error, Result};
 use lmdb_zero as lmdb;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ pub struct TantivyIndex {
 }
 
 impl TantivyIndex {
-    pub fn create(dir: &Path) -> Result<TantivyIndex, GuidebookError> {
+    pub fn create(dir: &Path) -> Result<TantivyIndex> {
         // setup directory structure
         let path_index = dir.join("index");
         if !path_index.exists() {
@@ -63,7 +63,7 @@ impl TantivyIndex {
                 TantivyError::IndexAlreadyExists => Ok(tantivy::Index::open_in_dir(&path_index)?),
                 _ => Err(error),
             })
-            .expect("failed to open the search index.");
+            .context("failed to open the tantivy index")?;
 
         // configure lmdb as a keyvalue store. We're joining the two databases here.
         let lmdb_env = Arc::new(unsafe {
@@ -77,7 +77,7 @@ impl TantivyIndex {
                     lmdb::open::Flags::empty(),
                     0o600,
                 )
-                .expect("failed to create the keyvalue store environment.")
+                .context("failed to create the keyvalue store environment.")?
         });
 
         return Ok(TantivyIndex {
@@ -98,13 +98,13 @@ impl TantivyIndex {
                 Some("indexed_files"),
                 &lmdb::DatabaseOptions::create_map::<str>(),
             )
-            .expect("failed to create keyvalue store tracking indexed files"),
+            .context("failed to create keyvalue store tracking indexed files")?,
         });
     }
 }
 
 impl WritableIndex for TantivyIndex {
-    fn begin_add_documents<'a>(&'a mut self) -> Result<Box<dyn IndexWriter + 'a>, GuidebookError> {
+    fn begin_add_documents<'a>(&'a mut self) -> Result<Box<dyn IndexWriter + 'a>> {
         return Ok(Box::new(TantivyIndexWriter::create(self)?));
     }
 }
@@ -115,7 +115,7 @@ impl SearchableIndex for TantivyIndex {
         query: &str,
         result_limit: usize,
         result_offset: usize,
-    ) -> Result<Vec<Document>, GuidebookError> {
+    ) -> Result<Vec<Document>> {
         let reader = self
             .index
             .reader_builder()
@@ -168,7 +168,7 @@ struct TantivyIndexWriter<'a> {
 }
 
 impl TantivyIndexWriter<'_> {
-    fn create(index: &mut TantivyIndex) -> Result<TantivyIndexWriter, GuidebookError> {
+    fn create(index: &mut TantivyIndex) -> Result<TantivyIndexWriter> {
         return Ok(TantivyIndexWriter {
             index: index,
             tantivy_writer: index.index.writer(50_000_000 /* 50 MB heap size */)?,
@@ -197,11 +197,7 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         return !doc.is_some();
     }
 
-    fn add_document(
-        &mut self,
-        doc: &Document,
-        keywords: &Vec<String>,
-    ) -> Result<(), GuidebookError> {
+    fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> Result<()> {
         // insert the full document in leveldb for later retrieval
         {
             let mut access = self
@@ -237,7 +233,7 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         return Ok(());
     }
 
-    fn commit(&mut self) -> Result<(), GuidebookError> {
+    fn commit(&mut self) -> Result<()> {
         self.tantivy_writer.commit()?;
 
         // we clear out the IndexWriter's handle on the WriteTransaction and then unwrap and commit the only remaining handle.

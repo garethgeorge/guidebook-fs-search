@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 pub mod config;
-pub mod error;
 pub mod index;
 pub mod indexer_worker;
 
@@ -11,19 +10,58 @@ use crate::index::*;
 use crate::indexer_worker::{
     metadata_providers::DefaultMetadataProvider, IndexerWorker, MetadataProvider,
 };
+use anyhow::{Context, Error, Result};
+use clap::{App, Arg, SubCommand};
+use std::fmt;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::{fs, io};
 
 fn main() {
-    let config = Config::from_file(&Path::new("./config.yml")).expect("failed to load config");
+    let defaultConfigPath = format!(
+        "{}/.config/guidebook.yml",
+        std::env::var("HOME").unwrap().as_str()
+    );
+
+    let m = App::new("guidebook")
+        .version("0.1.0")
+        .author("Gareth George")
+        .about("Guidebook fs search indexes your filesystem over time and makes it searchable!")
+        .arg(
+            clap::arg!([config] "Path to the config file to use.")
+                .default_value(&defaultConfigPath.as_str()),
+        )
+        .subcommand(
+            SubCommand::with_name("startweb")
+                .about("starts the web ui")
+                .arg(
+                    Arg::with_name("path")
+                        .help("Path to directory to index")
+                        .required(true)
+                        .index(1),
+                ),
+        )
+        .get_matches();
+
+    // Load configuration
+    let configPath = PathBuf::from(m.value_of("config").unwrap());
+    let config = Config::from_file(configPath.as_path())
+        .context(format!(
+            "Failed to load config from {}",
+            &configPath.to_string_lossy()
+        ))
+        .unwrap();
     println!("Loaded config: {:?}", config);
 
-    fs::create_dir_all("./test_index").expect("failed to create directory for the index");
+    // Open the database (creating it if it does not exist)
+    fs::create_dir_all(&config.database_location)
+        .expect("failed to create directory for the index");
+    let databasePath = PathBuf::from(&config.database_location);
     let mut index =
-        TantivyIndex::create(Path::new("./test_index")).expect("failed to create the index");
+        TantivyIndex::create(&databasePath.as_path()).expect("failed to create the index");
 
+    // Begin an indexing pass prior to launching the web UI (TODO: update index concurrently)
     {
         let writer = &mut index
             .begin_add_documents()

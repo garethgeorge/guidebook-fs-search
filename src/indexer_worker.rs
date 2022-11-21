@@ -3,17 +3,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{
-    error::GuidebookError,
-    index::{Document, DocumentMetadata, IndexWriter},
-};
+use crate::index::{Document, DocumentMetadata, IndexWriter};
+use anyhow::{Context, Error, Result};
+use jwalk;
 
 pub struct IndexerWorker {
     paths: Vec<PathBuf>,
     metadata_providers: Vec<Box<dyn MetadataProvider>>,
 }
 
-// TODO: this does not need to be a class... this can be functional. Metadata providers do need to be generic however.
 impl IndexerWorker {
     pub fn create(
         paths: &Vec<PathBuf>,
@@ -28,29 +26,48 @@ impl IndexerWorker {
     /**
      * Runs an indexing pass writing to the IndexWriter
      */
-    pub fn index(&mut self, to: &mut dyn IndexWriter) -> Result<(), GuidebookError> {
+    pub fn index(&mut self, to: &mut dyn IndexWriter) -> Result<()> {
         // TODO: is there a better way than cloning the paths here?
         for path in self.paths.clone() {
-            self.index_directory(path.as_path(), to)?;
+            for entry in jwalk::WalkDir::new(path) {
+                let entry = entry?;
+
+                println!("indexing {:?}", entry.path());
+
+                if entry.file_type().is_dir() {
+                    continue;
+                }
+                if entry.file_type().is_file() {
+                    self.index_file(&entry.path().as_path(), to)
+                        .context(format!("failed to index {:?}", &entry.path()))?;
+                }
+            }
         }
         return Ok(());
     }
 
-    fn index_directory(
-        &mut self,
-        dir: &Path,
-        to: &mut dyn IndexWriter,
-    ) -> Result<(), GuidebookError> {
+    fn index_directory(&mut self, dir: &Path, to: &mut dyn IndexWriter) -> Result<()> {
         println!("indexing directory {:?}", dir);
-        let dir_iterator = fs::read_dir(dir).expect("failed to read directory");
+        let dir_iterator = fs::read_dir(dir)
+            .expect(format!("failed to read directory {}", dir.display()).as_str());
 
         for entry in dir_iterator {
             let entry = entry?;
+            if entry.file_name().to_string_lossy().starts_with(".DS_Store") {
+                continue;
+            }
+
             if let Ok(filetype) = entry.file_type() {
-                if filetype.is_dir() {
-                    self.index_directory(&entry.path(), to)?;
-                } else if filetype.is_file() {
-                    self.index_file(entry.path().as_path(), to)?;
+                if filetype.is_file() {
+                    self.index_directory(&entry.path(), to).context(format!(
+                        "failed to index file {}",
+                        &entry.path().to_string_lossy(),
+                    ))?;
+                } else if filetype.is_dir() {
+                    self.index_directory(&entry.path(), to).context(format!(
+                        "failed to index directory {}",
+                        &entry.path().to_string_lossy(),
+                    ))?;
                 }
             }
         }
@@ -58,11 +75,7 @@ impl IndexerWorker {
         return Ok(());
     }
 
-    fn index_file(
-        &mut self,
-        file: &Path,
-        to: &mut dyn IndexWriter,
-    ) -> Result<Option<Document>, GuidebookError> {
+    fn index_file(&mut self, file: &Path, to: &mut dyn IndexWriter) -> Result<Option<Document>> {
         // TODO: test that this only invokes up to the first metadata provider that actually returns a thing.
         let mut document: Option<DocumentAndKeywords> = None;
 
@@ -80,7 +93,8 @@ impl IndexerWorker {
         }
 
         if let Some(document) = document {
-            to.add_document(&document.document.clone(), &Vec::new())?;
+            to.add_document(&document.document.clone(), &Vec::new())
+                .context("failed to add document to index writer transaction")?;
             println!(
                 "indexed metadata for {} is {:?}",
                 file.to_string_lossy(),
@@ -106,17 +120,12 @@ pub struct DocumentAndKeywords {
 // TODO(garethgeorge): this interface is awkward, provider should not be tied into the implementation details of determining whether a file has been indexed.
 pub trait MetadataProvider {
     fn provide_metadata(&self, path: &Path) -> Option<DocumentMetadata>;
-    fn document_for_metadata(
-        &self,
-        metadata: &DocumentMetadata,
-    ) -> Result<DocumentAndKeywords, GuidebookError>;
+    fn document_for_metadata(&self, metadata: &DocumentMetadata) -> Result<DocumentAndKeywords>;
 }
 
 pub mod metadata_providers {
-    use crate::{
-        error::GuidebookError,
-        index::{Document, DocumentMetadata},
-    };
+    use crate::index::{Document, DocumentMetadata};
+    use anyhow::Result;
     use std::{fs, path::Path};
 
     use super::{DocumentAndKeywords, MetadataProvider};
@@ -137,7 +146,7 @@ pub mod metadata_providers {
         fn document_for_metadata(
             &self,
             metadata: &DocumentMetadata,
-        ) -> Result<DocumentAndKeywords, GuidebookError> {
+        ) -> Result<DocumentAndKeywords> {
             let mut keywords: Vec<String> = Vec::new();
 
             if metadata.size < 1_000_000 {

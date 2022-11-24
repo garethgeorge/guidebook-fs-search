@@ -21,6 +21,22 @@ pub trait SearchableIndex {
     ) -> Result<Vec<Document>>;
 }
 
+pub trait Index: WritableIndex + SearchableIndex {
+    fn as_writable(&mut self) -> &mut dyn WritableIndex;
+    fn as_searchable(&mut self) -> &mut dyn SearchableIndex;
+}
+impl<T> Index for T
+where
+    T: WritableIndex + SearchableIndex,
+{
+    fn as_writable(&mut self) -> &mut dyn WritableIndex {
+        self
+    }
+    fn as_searchable(&mut self) -> &mut dyn SearchableIndex {
+        self
+    }
+}
+
 pub trait IndexWriter {
     fn should_add_document(&mut self, path: &Path) -> bool;
     fn add_document(&mut self, doc: &Document, keywords: &Vec<String>) -> Result<()>;

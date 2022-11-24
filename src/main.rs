@@ -12,8 +12,10 @@ use crate::indexer_worker::{
 };
 use anyhow::Context;
 use clap::{App, Arg, SubCommand};
+use std::borrow::BorrowMut;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::{fs, io};
 
@@ -23,13 +25,17 @@ fn main() {
         std::env::var("HOME").unwrap().as_str()
     );
 
-    let m = App::new("guidebook")
+    let mut app = App::new("guidebook")
         .version("0.1.0")
         .author("Gareth George")
         .about("Guidebook fs search indexes your filesystem over time and makes it searchable!")
         .arg(
             clap::arg!([config] "Path to the config file to use.")
                 .default_value(&default_config_path.as_str()),
+        )
+        .arg(
+            clap::arg!([skip_startup_indexing] "Skips indexing on startup if specified.")
+                .takes_value(false),
         )
         .subcommand(
             SubCommand::with_name("startweb")
@@ -41,7 +47,8 @@ fn main() {
                         .index(1),
                 ),
         )
-        .get_matches();
+        .subcommand(SubCommand::with_name("cli").about("starts the CLI search interface"));
+    let m = app.clone().get_matches();
 
     // Load configuration
     let config_path = PathBuf::from(m.value_of("config").unwrap());
@@ -57,31 +64,23 @@ fn main() {
     fs::create_dir_all(&config.database_location)
         .expect("failed to create directory for the index");
     let database_path = PathBuf::from(&config.database_location);
-    let mut index =
-        TantivyIndex::create(&database_path.as_path()).expect("failed to create the index");
+    let mut index: Box<dyn index::Index> = Box::new(
+        TantivyIndex::create(&database_path.as_path()).expect("failed to create the index"),
+    );
 
-    // Begin an indexing pass prior to launching the web UI (TODO: update index concurrently)
-    {
-        let writer = &mut index
-            .begin_add_documents()
-            .expect("Failed to get a document writer");
-
-        let mut paths: Vec<PathBuf> = Vec::new();
-        for indexed_dir in config.indexed_directories {
-            paths.push(PathBuf::from(indexed_dir.path));
-        }
-
-        let mut providers: Vec<Box<dyn MetadataProvider>> = Vec::new();
-        providers.push(Box::new(BasicAttributesMetadataProvider::new()));
-
-        let mut worker = IndexerWorker::create(&paths, providers);
-        worker.index(writer.as_mut()).expect("failed to index");
-
-        writer
-            .commit()
-            .expect("Failed to commit newly indexed documents. Uh oh.");
+    // Run an indexing pass
+    if !m.is_present("skip_startup_indexing") {
+        do_indexing(&config, index.as_writable());
     }
 
+    if let Some(_) = m.subcommand_matches("cli") {
+        search_cli(index.as_searchable());
+    } else {
+        app.print_help().unwrap();
+    }
+}
+
+fn search_cli(index: &mut dyn SearchableIndex) {
     let stdin = io::stdin();
     print!("query: ");
     let _ = std::io::stdout().flush();
@@ -104,6 +103,29 @@ fn main() {
         print!("query: ");
         let _ = std::io::stdout().flush();
     }
+}
 
-    println!("Hello world.")
+fn webui(index: &mut dyn SearchableIndex) {
+    // TODO: implement basic web server
+}
+
+fn do_indexing(config: &Config, index: &mut dyn WritableIndex) {
+    let writer = &mut index
+        .begin_add_documents()
+        .expect("Failed to get a document writer");
+
+    let mut paths: Vec<PathBuf> = Vec::new();
+    for indexed_dir in &config.indexed_directories {
+        paths.push(PathBuf::from(&indexed_dir.path));
+    }
+
+    let mut providers: Vec<Box<dyn MetadataProvider>> = Vec::new();
+    providers.push(Box::new(BasicAttributesMetadataProvider::new()));
+
+    let mut worker = IndexerWorker::create(&paths, providers);
+    worker.index(writer.as_mut()).expect("failed to index");
+
+    writer
+        .commit()
+        .expect("Failed to commit newly indexed documents. Uh oh.");
 }

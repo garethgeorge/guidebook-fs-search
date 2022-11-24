@@ -6,13 +6,13 @@ use std::path::Path;
 /**
  * Guidebook's configuration
  */
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub database_location: String,
     pub indexed_directories: Vec<IndexedDirectory>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IndexedDirectory {
     pub path: String,
 }

@@ -10,16 +10,15 @@ use crate::index::*;
 use crate::indexer_worker::{
     metadata_providers::BasicAttributesMetadataProvider, IndexerWorker, MetadataProvider,
 };
-use anyhow::{Context, Error, Result};
+use anyhow::Context;
 use clap::{App, Arg, SubCommand};
-use std::fmt;
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
 use std::{fs, io};
 
 fn main() {
-    let defaultConfigPath = format!(
+    let default_config_path = format!(
         "{}/.config/guidebook.yml",
         std::env::var("HOME").unwrap().as_str()
     );
@@ -30,7 +29,7 @@ fn main() {
         .about("Guidebook fs search indexes your filesystem over time and makes it searchable!")
         .arg(
             clap::arg!([config] "Path to the config file to use.")
-                .default_value(&defaultConfigPath.as_str()),
+                .default_value(&default_config_path.as_str()),
         )
         .subcommand(
             SubCommand::with_name("startweb")
@@ -45,11 +44,11 @@ fn main() {
         .get_matches();
 
     // Load configuration
-    let configPath = PathBuf::from(m.value_of("config").unwrap());
-    let config = Config::from_file(configPath.as_path())
+    let config_path = PathBuf::from(m.value_of("config").unwrap());
+    let config = Config::from_file(config_path.as_path())
         .context(format!(
             "Failed to load config from {}",
-            &configPath.to_string_lossy()
+            &config_path.to_string_lossy()
         ))
         .unwrap();
     println!("Loaded config: {:?}", config);
@@ -57,9 +56,9 @@ fn main() {
     // Open the database (creating it if it does not exist)
     fs::create_dir_all(&config.database_location)
         .expect("failed to create directory for the index");
-    let databasePath = PathBuf::from(&config.database_location);
+    let database_path = PathBuf::from(&config.database_location);
     let mut index =
-        TantivyIndex::create(&databasePath.as_path()).expect("failed to create the index");
+        TantivyIndex::create(&database_path.as_path()).expect("failed to create the index");
 
     // Begin an indexing pass prior to launching the web UI (TODO: update index concurrently)
     {
@@ -101,7 +100,7 @@ fn main() {
             println!("{:?}", document);
         }
 
-        print!("took: {} millis", now.elapsed().unwrap().as_millis());
+        println!("took: {} millis", now.elapsed().unwrap().as_millis());
         print!("query: ");
         let _ = std::io::stdout().flush();
     }

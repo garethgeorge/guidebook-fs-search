@@ -27,8 +27,7 @@ impl IndexerWorker {
      * Runs an indexing pass writing to the IndexWriter
      */
     pub fn index(&mut self, to: &mut dyn IndexWriter) -> Result<()> {
-        // TODO: is there a better way than cloning the paths here?
-        for path in self.paths.clone() {
+        for path in &self.paths.clone() {
             for entry in jwalk::WalkDir::new(path) {
                 let entry = entry?;
 
@@ -37,6 +36,7 @@ impl IndexerWorker {
                 if entry.file_type().is_dir() {
                     continue;
                 }
+
                 if entry.file_type().is_file() {
                     self.index_file(&entry.path().as_path(), to)
                         .context(format!("failed to index {:?}", &entry.path()))?;
@@ -95,7 +95,7 @@ impl IndexerWorker {
         }
 
         if let Some(document) = document {
-            to.add_document(&document.document.clone(), &Vec::new())
+            to.add_document(&document.document.clone(), &document.keywords)
                 .context("failed to add document to index writer transaction")?;
             println!(
                 "indexed metadata for {:?} is {:?}",
@@ -147,7 +147,8 @@ pub mod metadata_providers {
 
             let mut keywords: Vec<String> = Vec::new();
 
-            if metadata.size < 1_000_000 {
+            // only attempt fulltext indexing of documents less than 100KB.
+            if metadata.size < 100_000 {
                 let contents = fs::read_to_string(&metadata.path).unwrap_or_default();
 
                 if contents.is_ascii() {

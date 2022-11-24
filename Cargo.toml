@@ -17,6 +17,7 @@ include_dir = "0.7.3"
 lmdb-zero = "0.4.4"
 anyhow = "1.0.66"
 jwalk = "0.6.0"
+rocket = "0.5.0-rc.2"
 
 [[bin]]
 name = "guidebook-fs-search"

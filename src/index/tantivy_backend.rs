@@ -4,11 +4,11 @@ use tantivy::query::QueryParser;
 use tantivy::{ReloadPolicy, TantivyError};
 
 use crate::index::*;
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use lmdb_zero as lmdb;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fs, path};
 
 /**
  * Internal representation of the schema and fields that have been added to the index.
@@ -216,15 +216,15 @@ impl IndexWriter for TantivyIndexWriter<'_> {
         }
 
         // create the tantivy document to insert
+        let path = doc.metadata.path.to_string_lossy();
         let mut tantivy_doc = tantivy::doc! {
             self.index.layout.field_title => doc.title.clone()
         };
-        if let Some(path) = doc.metadata.path.to_str() {
-            tantivy_doc.add_facet(
-                self.index.layout.field_path,
-                tantivy::schema::Facet::from(path),
-            );
-        }
+        tantivy_doc.add_facet(
+            self.index.layout.field_path,
+            tantivy::schema::Facet::from(&path),
+        );
+
         for keyword in keywords {
             tantivy_doc.add_text(self.index.layout.field_keyword, keyword);
         }

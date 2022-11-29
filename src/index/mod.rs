@@ -1,6 +1,6 @@
 pub mod tantivy_backend;
 
-use anyhow::{Context, Error, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -12,9 +12,11 @@ pub trait WritableIndex {
     fn begin_add_documents(&mut self) -> Result<Box<dyn IndexWriter + '_>>;
 }
 
-pub trait SearchableIndex {
+// SearchableIndex represents an open index that can be searched, implementation
+// must be safe to implement Sync + Send
+pub trait SearchableIndex: Sync + Send {
     fn search(
-        &mut self,
+        &self,
         query: &str,
         result_limit: usize,
         result_offset: usize,
@@ -23,7 +25,7 @@ pub trait SearchableIndex {
 
 pub trait Index: WritableIndex + SearchableIndex {
     fn as_writable(&mut self) -> &mut dyn WritableIndex;
-    fn as_searchable(&mut self) -> &mut dyn SearchableIndex;
+    fn as_searchable(&self) -> &dyn SearchableIndex;
 }
 impl<T> Index for T
 where
@@ -32,7 +34,7 @@ where
     fn as_writable(&mut self) -> &mut dyn WritableIndex {
         self
     }
-    fn as_searchable(&mut self) -> &mut dyn SearchableIndex {
+    fn as_searchable(&self) -> &dyn SearchableIndex {
         self
     }
 }

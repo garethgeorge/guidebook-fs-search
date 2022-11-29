@@ -28,3 +28,5 @@ Guidebook is designed from first principles to be extremely light weight, blazin
    - [ ] Multi-filesystem support
    - [ ] S3 support
    - [ ] SSHFS support
+ - [ ] Cleanup
+   - [ ] Migrate configuration to https://docs.rs/figment/0.10.8/figment/

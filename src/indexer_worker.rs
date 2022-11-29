@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::index::{Document, DocumentMetadata, IndexWriter};
-use anyhow::{Context, Error, Result};
+use crate::index::{Document, IndexWriter};
+use anyhow::{Context, Result};
 use jwalk;
 
 pub struct IndexerWorker {

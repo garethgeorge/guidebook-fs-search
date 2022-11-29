@@ -3,6 +3,7 @@
 pub mod config;
 pub mod index;
 pub mod indexer_worker;
+pub mod webserver;
 
 use crate::config::Config;
 use crate::index::tantivy_backend::*;
@@ -37,16 +38,7 @@ fn main() {
             clap::arg!([skip_startup_indexing] "Skips indexing on startup if specified.")
                 .takes_value(false),
         )
-        .subcommand(
-            SubCommand::with_name("startweb")
-                .about("starts the web ui")
-                .arg(
-                    Arg::with_name("path")
-                        .help("Path to directory to index")
-                        .required(true)
-                        .index(1),
-                ),
-        )
+        .subcommand(SubCommand::with_name("startweb").about("starts the web ui"))
         .subcommand(SubCommand::with_name("cli").about("starts the CLI search interface"));
     let m = app.clone().get_matches();
 
@@ -64,9 +56,8 @@ fn main() {
     fs::create_dir_all(&config.database_location)
         .expect("failed to create directory for the index");
     let database_path = PathBuf::from(&config.database_location);
-    let mut index: Box<dyn index::Index> = Box::new(
-        TantivyIndex::create(&database_path.as_path()).expect("failed to create the index"),
-    );
+    let mut index =
+        TantivyIndex::create(&database_path.as_path()).expect("failed to create the index");
 
     // Run an indexing pass
     if !m.is_present("skip_startup_indexing") {
@@ -75,12 +66,15 @@ fn main() {
 
     if let Some(_) = m.subcommand_matches("cli") {
         search_cli(index.as_searchable());
+    } else if let Some(_) = m.subcommand_matches("startweb") {
+        webserver::set_state(Arc::new(index));
+        webserver::serve();
     } else {
         app.print_help().unwrap();
     }
 }
 
-fn search_cli(index: &mut dyn SearchableIndex) {
+fn search_cli(index: &dyn SearchableIndex) {
     let stdin = io::stdin();
     print!("query: ");
     let _ = std::io::stdout().flush();
@@ -103,10 +97,6 @@ fn search_cli(index: &mut dyn SearchableIndex) {
         print!("query: ");
         let _ = std::io::stdout().flush();
     }
-}
-
-fn webui(index: &mut dyn SearchableIndex) {
-    // TODO: implement basic web server
 }
 
 fn do_indexing(config: &Config, index: &mut dyn WritableIndex) {

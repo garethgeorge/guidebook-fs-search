@@ -111,7 +111,7 @@ impl WritableIndex for TantivyIndex {
 
 impl SearchableIndex for TantivyIndex {
     fn search(
-        &mut self,
+        &self,
         query: &str,
         result_limit: usize,
         result_offset: usize,

@@ -17,7 +17,7 @@ use rocket::{get, route, routes, Response};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
-pub static WEB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/web");
+pub static WEB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/web/dist");
 
 #[derive(Clone)]
 struct WebServerState {

@@ -697,6 +697,7 @@ dependencies = [
  "futures",
  "include_dir",
  "jwalk",
+ "lazy_static",
  "leveldb",
  "lmdb-zero",
  "rocket",

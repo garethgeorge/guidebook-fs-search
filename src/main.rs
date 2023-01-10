@@ -32,10 +32,13 @@ fn main() {
         .about("Guidebook fs search indexes your filesystem over time and makes it searchable!")
         .arg(
             clap::arg!([config] "Path to the config file to use.")
+                .long("config")
                 .default_value(&default_config_path.as_str()),
         )
         .arg(
-            clap::arg!([skip_startup_indexing] "Skips indexing on startup if specified.")
+            Arg::new("update_index")
+                .long("update_index")
+                .help("Updates the index")
                 .takes_value(false),
         )
         .subcommand(SubCommand::with_name("startweb").about("starts the web ui"))
@@ -60,7 +63,7 @@ fn main() {
         TantivyIndex::create(&database_path.as_path()).expect("failed to create the index");
 
     // Run an indexing pass
-    if !m.is_present("skip_startup_indexing") {
+    if m.is_present("update_index") {
         do_indexing(&config, index.as_writable());
     }
 

@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use crate::index::{Document, Index};
 use anyhow::Result;
 use include_dir::{include_dir, Dir};
+use lazy_static::lazy_static;
 use rocket::config::Config as RocketConfig;
 use rocket::fs::NamedFile;
 use rocket::http::ContentType;
@@ -22,8 +23,9 @@ pub static WEB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/web");
 struct WebServerState {
     db: Arc<dyn Index>,
 }
-
-static state: Mutex<Option<WebServerState>> = Mutex::new(None);
+lazy_static! {
+    static ref state: Mutex<Option<WebServerState>> = Mutex::new(None);
+}
 
 pub fn set_state(database: Arc<dyn Index>) -> Result<()> {
     state.lock().unwrap().replace(WebServerState {

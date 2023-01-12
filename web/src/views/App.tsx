@@ -3,9 +3,7 @@ import * as React from "react";
 import _ from "lodash";
 import * as api from "../api";
 
-const query = _.debounce(async (query: string) => {
-  return api.search(query);
-}, 100);
+let timeout: NodeJS.Timeout | undefined;
 
 export const App = () => {
   const [searchTerm, setSearchTerm] = React.useState("");
@@ -13,8 +11,13 @@ export const App = () => {
 
   React.useEffect(() => {
     (async () => {
-      const res = await query(searchTerm);
-      setResults(() => res);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(async () => {
+        const res = await api.search(searchTerm);
+        setResults(() => res);
+      }, 100);
     })();
   }, [searchTerm]);
 
